@@ -48,7 +48,7 @@ window.CONFIG = {
   }
   *{box-sizing:border-box}
   html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--ui);-webkit-text-size-adjust:100%}
-  button{font:inherit;cursor:pointer}
+  button{font:inherit;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
   input,textarea,select{font:inherit;color:inherit}
   .hidden{display:none!important}
   .screen{min-height:100vh;padding:24px 16px 80px}
@@ -94,7 +94,7 @@ window.CONFIG = {
 
   /* Writing screen */
   #s-write{padding:0 0 80px}
-  .write-bar{position:sticky;top:0;z-index:5;background:rgba(244,241,234,.94);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  .write-bar{position:sticky;top:0;z-index:5;background:rgba(244,241,234,.94);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
   .who{display:flex;flex-direction:column;min-width:0;flex:1 1 200px}
   .who .task{font-weight:600;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .who .nm{font-size:13px;color:var(--muted)}
@@ -159,7 +159,7 @@ window.CONFIG = {
   }
 
   /* Modal + preview */
-  .overlay{position:fixed;inset:0;background:rgba(48,48,42,.97);z-index:50;display:flex;flex-direction:column}
+  .overlay{position:fixed;inset:0;background:#30302a;z-index:50;display:flex;flex-direction:column}
   .overlay .bar{display:flex;align-items:center;gap:10px;padding:10px 16px;background:#2b2b27;color:#fff;flex-wrap:wrap}
   .overlay .bar .ttl{flex:1;font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .overlay .bar .btn{background:#41413b;border-color:#55554d;color:#fff}
@@ -211,7 +211,7 @@ window.CONFIG = {
     <h2 id="pass-name"></h2>
     <form id="pass-form" class="stack" autocomplete="off">
       <label class="lbl" for="pass-input">Your password</label>
-      <input id="pass-input" class="field" type="password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <input id="pass-input" class="field" type="password" autocomplete="off" enterkeyhint="go" autocapitalize="off" autocorrect="off" spellcheck="false">
       <button class="btn primary big" style="width:100%;justify-content:center" type="submit" id="pass-go">Start writing</button>
       <p id="pass-err" class="err"></p>
     </form>
@@ -478,11 +478,11 @@ function openPreview(piece, {subtitle = '', onPdf = null} = {}){
     const s = Math.min(1.35, (wrapEl.clientWidth - 24) / PAGE.W);
     holders.forEach(({h, pg}) => { h.style.width = PAGE.W*s + 'px'; h.style.height = PAGE.H*s + 'px'; pg.style.transform = `scale(${s})`; });
   };
-  const close = () => { ov.remove(); window.removeEventListener('resize', fit); document.removeEventListener('keydown', onKey); };
+  const close = () => { document.documentElement.style.overflow = ''; ov.remove(); window.removeEventListener('resize', fit); document.removeEventListener('keydown', onKey); };
   const onKey = e => { if (e.key === 'Escape') close(); };
   $('[data-close]', ov).onclick = close;
   if (onPdf) $('[data-pdf]', ov).onclick = onPdf;
-  document.body.appendChild(ov); fit();
+  document.documentElement.style.overflow = 'hidden'; document.body.appendChild(ov); fit();
   window.addEventListener('resize', fit); document.addEventListener('keydown', onKey);
 }
 
@@ -673,7 +673,7 @@ function showPass(r){
   picked = r;
   const av = $('#pass-avatar'); av.textContent = initials(r.name); av.style.background = colorFor(r.name);
   $('#pass-name').textContent = r.name; $('#pass-input').value = ''; $('#pass-err').textContent = '';
-  show('s-pass'); setTimeout(() => $('#pass-input').focus(), 50);
+  show('s-pass'); $('#pass-input').focus();
 }
 $('#pass-back').onclick = showNames;
 $('#pass-form').onsubmit = async e => {
@@ -713,6 +713,7 @@ function setLocked(on){
 }
 
 async function showWriter(me){
+  lastSel = null;
   W.me = me; W.loaded = false; W.dirty = false; W.pending = 0; W.lastClient = 0;
   $('#w-name').textContent = me.name;
   show('s-write'); setStatus('', 'Loading…');
@@ -779,16 +780,26 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 window.addEventListener('pagehide', () => { if (W.dirty) save(); });
 window.addEventListener('beforeunload', e => { if (W.dirty || W.pending) { if (W.dirty) save(); e.preventDefault(); e.returnValue = ''; } });
 
+// Remember where the cursor was, so Indent still works after the text box loses focus.
+let lastSel = null;
+ta.addEventListener('blur', () => { lastSel = [ta.selectionStart, ta.selectionEnd]; });
 function insertTab(){
   if (ta.readOnly) return;
+  if (document.activeElement !== ta) {
+    ta.focus();
+    const [a, b] = lastSel || [ta.value.length, ta.value.length];
+    try { ta.setSelectionRange(a, b); } catch {}
+  }
   const s = ta.selectionStart, e = ta.selectionEnd;
-  ta.focus();
   // execCommand keeps the browser's undo history working; fall back to setRangeText.
   if (!document.execCommand || !document.execCommand('insertText', false, '\t')) { ta.setRangeText('\t', s, e, 'end'); ta.dispatchEvent(new Event('input')); }
 }
 ta.addEventListener('keydown', e => { if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); insertTab(); } });
-$('#btn-tab').addEventListener('mousedown', e => e.preventDefault()); // keep the cursor where it is
-$('#btn-tab').onclick = insertTab;
+// Keep the cursor (and the iPad keyboard) in the text box when Indent is tapped.
+const tabBtn = $('#btn-tab');
+tabBtn.addEventListener('touchstart', e => { e.preventDefault(); insertTab(); }, {passive: false});
+tabBtn.addEventListener('mousedown', e => e.preventDefault());
+tabBtn.addEventListener('click', insertTab);
 $('#btn-preview').onclick = () => {
   if (W.dirty) save();
   openPreview({name: W.me.name, title: titleIn.value, text: ta.value, date: fmtDate()});
