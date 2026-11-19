@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Final Draft</title>
+<!--
+  FINAL DRAFT — a simple writing space for students.
+
+  ▸ With CONFIG.firebase left as null, the page runs in DEMO MODE: everything is
+    stored only in this browser, so you can click through it right away.
+  ▸ To use it for real, paste your Firebase web config below, set teacherEmail,
+    publish firestore.rules, and host this file (e.g. Cloudflare Pages).
+    See SETUP.md for the step-by-step.
+-->
+<script>
+window.CONFIG = {
+  // Paste your Firebase web app config here (Project settings → Your apps → Config).
+  // Leave as null for demo mode.
+  firebase: {
+    apiKey: "AIzaSyB_v-7tIivONp-oSqAvUR19e8TR9ALukPU",
+    authDomain: "writing-submission.firebaseapp.com",
+    projectId: "writing-submission",
+    storageBucket: "writing-submission.firebasestorage.app",
+    messagingSenderId: "856590452177",
+    appId: "1:856590452177:web:8f8fd3398effd608d24cf0"
+  },
+
+  teacherEmail: "benjamin.mcbride.84@gmail.com", // must match the email in firestore.rules
+  appName: "Final Draft",
+  bodySize: 12,          // font size (pt) of the writing on the A4 page
+  spellcheck: true,      // set to false to turn off red underlines / autocorrect
+  autosaveSeconds: 3     // how often unsaved changes are saved
+};
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f4f1ea; --ink:#1f2430; --muted:#6b6f7b; --line:#e2ddd2;
+    --card:#ffffff; --accent:#2f6b5f; --accent-2:#e9f2ef; --accent-ink:#ffffff;
+    --warn:#b4541a; --ok:#2e7d4f; --ok-bg:#e5f4ea; --err:#b3261e;
+    --radius:14px; --shadow:0 1px 2px rgba(0,0,0,.05),0 6px 24px rgba(30,30,20,.07);
+    --ui:"Lexend",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --paper-font:Arial,Helvetica,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--ui);-webkit-text-size-adjust:100%}
+  button{font:inherit;cursor:pointer}
+  input,textarea,select{font:inherit;color:inherit}
+  .hidden{display:none!important}
+  .screen{min-height:100vh;padding:24px 16px 80px}
+  .demo-banner{background:#fff4d6;color:#6b4e00;font-size:13px;padding:8px 14px;text-align:center;border-bottom:1px solid #f0dfa8}
+  .demo-banner b{font-weight:600}
+
+  /* Buttons */
+  .btn{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;padding:9px 14px;font-size:15px;font-weight:500;display:inline-flex;align-items:center;gap:6px;line-height:1.2;transition:background .15s,border-color .15s,transform .05s}
+  .btn:hover{border-color:#cfc8b8}
+  .btn:active{transform:translateY(1px)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+  .btn.primary:hover{filter:brightness(1.06)}
+  .btn.ghost{background:transparent;border-color:transparent;color:var(--muted)}
+  .btn.ghost:hover{background:rgba(0,0,0,.04)}
+  .btn.big{padding:14px 20px;font-size:18px;border-radius:12px}
+  .btn.small{padding:6px 10px;font-size:13px;border-radius:8px}
+  .btn.danger{color:var(--err)}
+  .btn:disabled{opacity:.5;cursor:default}
+  .link{background:none;border:none;color:var(--muted);text-decoration:underline;font-size:14px;padding:8px}
+
+  /* Name picker */
+  .hero{text-align:center;margin:28px auto 24px;max-width:640px}
+  .hero h1{font-size:34px;margin:0 0 6px;font-weight:700;letter-spacing:-.01em}
+  .hero p{margin:0;color:var(--muted);font-size:17px}
+  .name-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;max-width:960px;margin:0 auto}
+  .name-btn{background:var(--card);border:2px solid transparent;border-radius:var(--radius);padding:18px 12px;font-size:19px;font-weight:500;box-shadow:var(--shadow);display:flex;flex-direction:column;align-items:center;gap:10px;transition:border-color .15s,transform .1s}
+  .name-btn:hover{border-color:var(--accent)}
+  .name-btn:active{transform:scale(.98)}
+  .avatar{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:22px;color:#fff}
+  .center-foot{text-align:center;margin-top:36px}
+  .empty{text-align:center;color:var(--muted);padding:40px 16px}
+
+  /* Cards / forms */
+  .card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:24px}
+  .narrow{max-width:420px;margin:48px auto 0;text-align:center}
+  .narrow .avatar{width:72px;height:72px;font-size:30px;margin:0 auto 10px}
+  .narrow h2{margin:0 0 20px;font-size:26px}
+  label.lbl{display:block;text-align:left;font-size:14px;color:var(--muted);margin:0 0 6px}
+  .field{width:100%;padding:14px 14px;border:2px solid var(--line);border-radius:12px;font-size:20px;background:#fff;outline:none}
+  .field:focus{border-color:var(--accent)}
+  .err{color:var(--err);font-size:15px;min-height:1.3em;margin:10px 0 0}
+  .stack>*+*{margin-top:12px}
+
+  /* Writing screen */
+  #s-write{padding:0 0 80px}
+  .write-bar{position:sticky;top:0;z-index:5;background:rgba(244,241,234,.94);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  .who{display:flex;flex-direction:column;min-width:0;flex:1 1 200px}
+  .who .task{font-weight:600;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .who .nm{font-size:13px;color:var(--muted)}
+  .actions{display:flex;gap:8px;flex-wrap:wrap}
+  .save-status{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px;min-width:150px}
+  .dot{width:8px;height:8px;border-radius:50%;background:#bbb;flex:none}
+  .save-status.saved .dot{background:var(--ok)}
+  .save-status.saving .dot{background:#d9a400}
+  .save-status.offline .dot,.save-status.error .dot{background:var(--err)}
+  .save-status.error{color:var(--err)}
+  .banner{max-width:860px;margin:16px auto 0;background:var(--ok-bg);color:#1d5134;border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:16px}
+  .banner .btn{margin-left:auto}
+  .paper{max-width:860px;margin:18px auto 0;background:#fff;border-radius:6px;box-shadow:var(--shadow);padding:40px clamp(18px,6vw,72px) 60px;min-height:70vh}
+  #w-title{width:100%;resize:none;overflow:hidden;line-height:1.3;display:block;font-size:clamp(19px,4.6vw,24px)!important;border:none;border-bottom:1px dashed var(--line);font-family:var(--paper-font);font-size:24px;font-weight:700;text-align:center;padding:6px 0 12px;margin-bottom:18px;outline:none;background:transparent}
+  #w-title::placeholder{color:#b9b4a8;font-weight:400}
+  #w-text{width:100%;border:none;outline:none;resize:none;font-family:var(--paper-font);font-size:19px;line-height:2;min-height:55vh;background:transparent;tab-size:8;tab-size:2.4em;-moz-tab-size:8;overflow:hidden;display:block}
+  #w-text::placeholder{color:#b9b4a8}
+  .paper.locked #w-text,.paper.locked #w-title{color:#444}
+  .wordcount{max-width:860px;margin:10px auto 0;text-align:right;color:var(--muted);font-size:13px;padding:0 6px}
+  .no-task{max-width:520px;margin:80px auto 0;text-align:center}
+  .no-task h2{margin:0 0 8px}
+
+  /* Teacher */
+  #s-teacher{max-width:1080px;margin:0 auto}
+  .t-head{display:flex;align-items:center;gap:12px;margin:8px 0 18px;flex-wrap:wrap}
+  .t-head h1{font-size:26px;margin:0;flex:1}
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:18px}
+  .tabs button{background:none;border:none;padding:10px 14px;font-size:15px;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-1px}
+  .tabs button.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .row .grow{flex:1}
+  select.sel{padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:15px;max-width:100%}
+  .badge{font-size:12px;font-weight:600;padding:4px 9px;border-radius:999px;background:var(--accent-2);color:var(--accent)}
+  .summary{margin:16px 0 10px;color:var(--muted);font-size:14px}
+  .progress{height:8px;background:#e9e4d8;border-radius:99px;overflow:hidden;margin-top:6px}
+  .progress>div{height:100%;background:var(--ok);border-radius:99px;transition:width .3s}
+  table.tbl{width:100%;border-collapse:collapse;background:#fff;border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow)}
+  .tbl th,.tbl td{text-align:left;padding:12px 14px;border-bottom:1px solid #f0ece3;font-size:15px;vertical-align:middle}
+  .tbl th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;background:#faf8f3}
+  .tbl tr:last-child td{border-bottom:none}
+  .tbl td.actions-cell{white-space:nowrap;text-align:right}
+  .pill{display:inline-block;padding:4px 10px;border-radius:999px;font-size:13px;font-weight:500}
+  .pill.fin{background:var(--ok-bg);color:var(--ok)}
+  .pill.wip{background:#fff1dc;color:var(--warn)}
+  .pill.none{background:#f0eee9;color:var(--muted)}
+  .muted{color:var(--muted)}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px}
+  .t-section+.t-section{margin-top:18px}
+  .t-section h3{margin:0 0 6px;font-size:18px}
+  .t-section p{margin:0 0 12px;color:var(--muted);font-size:14px}
+  textarea.area{width:100%;min-height:140px;border:1px solid var(--line);border-radius:10px;padding:12px;font-size:15px;line-height:1.5;outline:none}
+  textarea.area:focus{border-color:var(--accent)}
+  .msg{font-size:14px;margin-top:10px;white-space:pre-line}
+  .msg.ok{color:var(--ok)} .msg.bad{color:var(--err)}
+  @media (max-width:700px){
+    .tbl thead{display:none}
+    .tbl,.tbl tbody,.tbl tr,.tbl td{display:block;width:100%}
+    .tbl tr{border-bottom:1px solid #eee;padding:8px 0}
+    .tbl td{border:none;padding:4px 14px}
+    .tbl td.actions-cell{text-align:left}
+    .write-bar .btn{padding:8px 11px;font-size:14px}
+  }
+
+  /* Modal + preview */
+  .overlay{position:fixed;inset:0;background:rgba(48,48,42,.97);z-index:50;display:flex;flex-direction:column}
+  .overlay .bar{display:flex;align-items:center;gap:10px;padding:10px 16px;background:#2b2b27;color:#fff;flex-wrap:wrap}
+  .overlay .bar .ttl{flex:1;font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .overlay .bar .btn{background:#41413b;border-color:#55554d;color:#fff}
+  .overlay .bar .btn.primary{background:var(--accent);border-color:var(--accent)}
+  .pages{flex:1;overflow:auto;padding:24px 12px 60px;display:flex;flex-direction:column;align-items:center;gap:20px;-webkit-overflow-scrolling:touch}
+  .page-holder{position:relative;flex:none;box-shadow:0 4px 20px rgba(0,0,0,.35)}
+  .page{position:absolute;left:0;top:0;width:595.28px;height:841.89px;background:#fff;transform-origin:0 0;overflow:hidden;font-family:Helvetica,Arial,sans-serif;color:#000}
+  .page .ln{position:absolute;white-space:pre;line-height:1}
+  .page-label{color:#ddd;font-size:12px;text-align:center;margin-top:-12px}
+  .dialog-wrap{position:fixed;inset:0;background:rgba(25,25,20,.45);z-index:60;display:grid;place-items:center;padding:16px}
+  .dialog{background:#fff;border-radius:16px;box-shadow:var(--shadow);padding:22px;width:100%;max-width:420px}
+  .dialog h3{margin:0 0 8px;font-size:20px}
+  .dialog p{margin:0 0 14px;color:var(--muted)}
+  .dialog .row{justify-content:flex-end;margin-top:16px}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#2b2b27;color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;z-index:70;box-shadow:var(--shadow)}
+
+  /* Printable login cards */
+  #print-area{display:none}
+  @media print{
+    body.print-cards > *:not(#print-area){display:none!important}
+    body.print-cards #print-area{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0}
+    .login-card{border:1.5px dashed #999;border-radius:10px;padding:16px;break-inside:avoid;font-family:var(--ui)}
+    .login-card .n{font-size:20px;font-weight:600}
+    .login-card .p{font-size:22px;font-family:ui-monospace,Menlo,monospace;margin-top:8px}
+    .login-card .u{font-size:11px;color:#555;margin-top:8px}
+  }
+  .loading{display:grid;place-items:center;min-height:60vh;color:var(--muted)}
+</style>
+</head>
+<body>
+<div id="demo-banner" class="demo-banner hidden"></div>
+
+<div id="s-loading" class="screen loading">Loading…</div>
+
+<!-- 1. Student: choose your name -->
+<section id="s-names" class="screen hidden">
+  <div class="hero">
+    <h1>Who are you?</h1>
+    <p>Tap your name to start writing.</p>
+  </div>
+  <div id="name-grid" class="name-grid"></div>
+  <div class="center-foot"><button class="link" id="to-teacher">Teacher sign in</button></div>
+</section>
+
+<!-- 2. Student: password -->
+<section id="s-pass" class="screen hidden">
+  <div class="card narrow">
+    <div id="pass-avatar" class="avatar"></div>
+    <h2 id="pass-name"></h2>
+    <form id="pass-form" class="stack" autocomplete="off">
+      <label class="lbl" for="pass-input">Your password</label>
+      <input id="pass-input" class="field" type="password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <button class="btn primary big" style="width:100%;justify-content:center" type="submit" id="pass-go">Start writing</button>
+      <p id="pass-err" class="err"></p>
+    </form>
+  </div>
+  <div class="center-foot"><button class="link" id="pass-back">← That's not me</button></div>
+</section>
+
+<!-- 3. Student: write -->
+<section id="s-write" class="hidden">
+  <div class="write-bar">
+    <div class="who"><span class="task" id="w-task"></span><span class="nm" id="w-name"></span></div>
+    <div class="save-status" id="save-status"><span class="dot"></span><span class="txt">Loading…</span></div>
+    <div class="actions">
+      <button class="btn" id="btn-tab" title="Indent (Tab)">⇥ Indent</button>
+      <button class="btn" id="btn-preview">👁 Preview</button>
+      <button class="btn primary" id="btn-finish">✓ I'm finished</button>
+      <button class="btn ghost" id="btn-signout">Sign out</button>
+    </div>
+  </div>
+  <div id="w-body">
+    <div id="finished-banner" class="banner hidden">
+      <span>🎉 <b>Finished!</b> Your teacher can see your writing.</span>
+      <button class="btn" id="btn-unfinish">✏️ Make changes</button>
+    </div>
+    <div class="paper" id="paper">
+      <textarea id="w-title" rows="1" placeholder="Title" maxlength="120" autocomplete="off"></textarea>
+      <textarea id="w-text" placeholder="Start writing here…"></textarea>
+    </div>
+    <div class="wordcount" id="w-count"></div>
+  </div>
+  <div id="w-notask" class="no-task card hidden">
+    <h2>Nothing to write yet</h2>
+    <p class="muted">Your teacher hasn't opened a writing task. Check back soon!</p>
+    <button class="btn" id="btn-signout2">Sign out</button>
+  </div>
+</section>
+
+<!-- 4. Teacher sign in -->
+<section id="s-tlogin" class="screen hidden">
+  <div class="card narrow">
+    <h2>Teacher sign in</h2>
+    <form id="tlogin-form" class="stack">
+      <div><label class="lbl" for="t-email">Email</label><input id="t-email" class="field" type="email" autocomplete="username"></div>
+      <div><label class="lbl" for="t-pass">Password</label><input id="t-pass" class="field" type="password" autocomplete="current-password"></div>
+      <button class="btn primary big" style="width:100%;justify-content:center" type="submit">Sign in</button>
+      <p id="tlogin-err" class="err"></p>
+    </form>
+  </div>
+  <div class="center-foot"><button class="link" id="tlogin-back">← Back to student names</button></div>
+</section>
+
+<!-- 5. Teacher dashboard -->
+<section id="s-teacher" class="screen hidden">
+  <div class="t-head">
+    <h1>Writing dashboard</h1>
+    <button class="btn ghost" id="t-signout">Sign out</button>
+  </div>
+  <div class="tabs">
+    <button data-tab="work" class="on">Student work</button>
+    <button data-tab="students">Students &amp; passwords</button>
+  </div>
+
+  <div id="tab-work">
+    <div class="row">
+      <select id="t-task" class="sel" aria-label="Writing task"></select>
+      <span id="t-active-badge" class="badge hidden">Open for students</span>
+      <button class="btn small" id="t-make-active">Open for students</button>
+      <span class="grow"></span>
+      <button class="btn small" id="t-rename">Rename</button>
+      <button class="btn small primary" id="t-new-task">＋ New writing task</button>
+    </div>
+    <div id="t-no-tasks" class="empty hidden">No writing tasks yet. Create one to get started.</div>
+    <div id="t-work-body">
+      <div class="summary"><span id="t-summary"></span><div class="progress"><div id="t-progress" style="width:0"></div></div></div>
+      <div class="row" style="margin:12px 0">
+        <span class="grow"></span>
+        <button class="btn small" id="t-export-finished">⬇ PDF of finished work</button>
+        <button class="btn small" id="t-export-all">⬇ PDF of everyone</button>
+      </div>
+      <table class="tbl" id="t-table">
+        <thead><tr><th>Student</th><th>Status</th><th>Words</th><th>Last saved</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="tab-students" class="hidden">
+    <div class="card t-section">
+      <h3>Add students</h3>
+      <p>One student per line: <span class="mono">Name, password</span>. Leave the password off and one will be made up for you (like <span class="mono">panda47</span>). Passwords need at least 6 characters.</p>
+      <textarea id="t-add" class="area" placeholder="Ana Clara, sunset22&#10;Lucas&#10;Hana, koala81"></textarea>
+      <div class="row" style="margin-top:10px"><button class="btn primary" id="t-add-btn">Add students</button></div>
+      <div id="t-add-msg" class="msg"></div>
+    </div>
+    <div class="card t-section">
+      <div class="row" style="margin-bottom:12px">
+        <h3 class="grow" style="margin:0">Class list</h3>
+        <button class="btn small" id="t-show-pw">Show passwords</button>
+        <button class="btn small" id="t-print">🖨 Print login cards</button>
+      </div>
+      <table class="tbl" id="t-roster"><tbody></tbody></table>
+    </div>
+  </div>
+</section>
+
+<div id="print-area"></div>
+
+<script type="module">
+const CONFIG = window.CONFIG;
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+document.title = CONFIG.appName;
+
+/* ------------------------------------------------------------------ *
+ *  Small UI helpers
+ * ------------------------------------------------------------------ */
+const SCREENS = ['s-loading','s-names','s-pass','s-write','s-tlogin','s-teacher'];
+function show(id){ SCREENS.forEach(s => $('#'+s).classList.toggle('hidden', s !== id)); window.scrollTo(0,0); }
+const COLORS = ['#2f6b5f','#b4541a','#4b5fa8','#8a4f9e','#2d7fa3','#a2463e','#5d7d2c','#b0861a','#5b6470','#c05a86'];
+function colorFor(name){ let h=0; for (const c of name) h = (h*31 + c.charCodeAt(0)) >>> 0; return COLORS[h % COLORS.length]; }
+function initials(name){ const p = name.trim().split(/\s+/); return (p[0]?.[0] || '?').toUpperCase() + (p.length > 1 ? p[p.length-1][0].toUpperCase() : ''); }
+function toast(msg, ms = 2600){ const t = document.createElement('div'); t.className='toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(()=>t.remove(), ms); }
+function wordCount(s){ const m = (s||'').trim().match(/\S+/g); return m ? m.length : 0; }
+function fmtDate(ms){ return new Date(ms || Date.now()).toLocaleDateString('en-GB', {day:'numeric', month:'long', year:'numeric'}); }
+function ago(ms){
+  if (!ms) return '—';
+  const s = Math.round((Date.now() - ms)/1000);
+  if (s < 45) return 'just now';
+  if (s < 3600) return Math.round(s/60) + ' min ago';
+  if (s < 86400) return Math.round(s/3600) + ' h ago';
+  return new Date(ms).toLocaleDateString('en-GB', {day:'numeric', month:'short'}) + ', ' + new Date(ms).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+}
+function dialog({title, text = '', input = null, okText = 'OK', cancelText = 'Cancel', danger = false}){
+  return new Promise(resolve => {
+    const w = document.createElement('div'); w.className = 'dialog-wrap';
+    w.innerHTML = `<form class="dialog"><h3>${esc(title)}</h3>${text ? `<p>${esc(text)}</p>` : ''}
+      ${input !== null ? `<input class="field" style="font-size:17px" value="${esc(input)}">` : ''}
+      <div class="row">${cancelText ? `<button type="button" class="btn ghost" data-x>${esc(cancelText)}</button>` : ''}
+      <button class="btn primary ${danger?'danger':''}" type="submit">${esc(okText)}</button></div></form>`;
+    document.body.appendChild(w);
+    const inp = $('input', w); (inp || $('[type=submit]', w)).focus(); if (inp) inp.select();
+    const done = v => { w.remove(); resolve(v); };
+    $('form', w).onsubmit = e => { e.preventDefault(); done(inp ? inp.value.trim() : true); };
+    $('[data-x]', w)?.addEventListener('click', () => done(null));
+    w.addEventListener('click', e => { if (e.target === w) done(null); });
+  });
+}
+const WORDS = ['tiger','mango','rocket','panda','cloud','river','pizza','comet','lemon','otter','maple','zebra','koala','piano','robot','ocean','tulip','eagle','sunny','cocoa','pearl','bison','lotus','gecko'];
+const makePassword = () => WORDS[Math.floor(Math.random()*WORDS.length)] + String(10 + Math.floor(Math.random()*90));
+const slug = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,24) || 'student';
+
+/* ------------------------------------------------------------------ *
+ *  A4 layout engine — shared by Preview and PDF so they always match
+ * ------------------------------------------------------------------ */
+const PAGE = { W: 595.28, H: 841.89, M: 72 };   // A4 in points, 1-inch (2.54 cm) margins
+const INDENT = 36;                               // one Tab = 1.27 cm first-line indent
+let _measurer = null;
+function measurer(){ if (!_measurer) _measurer = new window.jspdf.jsPDF({unit:'pt', format:'a4'}); return _measurer; }
+function tw(s, size, bold){ const m = measurer(); m.setFont('helvetica', bold ? 'bold' : 'normal'); return m.getStringUnitWidth(s) * size; }
+// The PDF's built-in font covers Latin characters (incl. ã, ç, é, “ ” ‘ ’ – —). Anything else (emoji etc.) is removed
+// in both preview and PDF so what students see is exactly what prints.
+const EXTRA = '€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ';
+function clean(s){ return [...String(s ?? '').normalize('NFC')].filter(ch => ch === '\n' || ch === '\t' || (ch >= ' ' && ch <= '~') || (ch >= ' ' && ch <= 'ÿ') || EXTRA.includes(ch)).join(''); }
+
+function wrap(text, firstW, otherW, size, bold){
+  const lines = []; let cur = '', limit = firstW;
+  const push = () => { lines.push(cur.replace(/ +$/,'')); cur = ''; limit = otherW; };
+  for (const tok of text.split(/( +)/)) {
+    if (!tok) continue;
+    if (tw((cur + tok).replace(/ +$/,''), size, bold) <= limit) { cur += tok; continue; }
+    if (/^ +$/.test(tok)) { push(); continue; }          // break at the space
+    if (cur.trim()) push();
+    let w = tok;
+    while (tw(w, size, bold) > limit) {                     // a single word wider than the line
+      let k = w.length; while (k > 1 && tw(w.slice(0,k), size, bold) > limit) k--;
+      lines.push(w.slice(0,k)); w = w.slice(k); limit = otherW;
+    }
+    cur = (cur.trim() ? cur : '') + w;
+  }
+  lines.push(cur.replace(/ +$/,''));
+  return lines;
+}
+
+function layoutPiece({name, title, text, date}){
+  const size = CONFIG.bodySize, lh = size * 2, {W, H, M} = PAGE, maxW = W - 2*M;
+  const pages = []; let items, y;
+  name = clean(name).replace(/\s+/g,' '); title = clean(title).replace(/\s+/g,' ').trim();
+  const newPage = () => {
+    items = []; pages.push(items);
+    items.push({t: name, x: M, y: M - 30, size: 9.5, color: '#666666'});
+    if (date) items.push({t: date, x: W - M, y: M - 30, size: 9.5, align: 'right', color: '#666666'});
+    y = M + size;
+  };
+  newPage();
+  if (title) {
+    const tl = wrap(title, maxW, maxW, 16, true);
+    y = M + 14;
+    tl.forEach((t, i) => { items.push({t, x: W/2, y, size: 16, bold: true, align: 'center'}); y += 22; });
+    y += lh - 22 + 10;
+  }
+  const body = clean(text).replace(/\r/g,'').replace(/\s+$/,'');
+  for (const para of body ? body.split('\n') : []) {
+    const tabs = (para.match(/^\t+/) || [''])[0].length;
+    const rest = para.slice(tabs).replace(/\t/g, '    ');
+    const ind = Math.min(tabs * INDENT, maxW / 2);
+    const lines = rest.trim() === '' ? [''] : wrap(rest, maxW - ind, maxW, size, false);
+    lines.forEach((t, i) => {
+      if (y > H - M + 2) newPage();
+      if (t) items.push({t, x: M + (i === 0 ? ind : 0), y, size});
+      y += lh;
+    });
+  }
+  const n = pages.length;
+  if (n > 1) pages.forEach((p, i) => p.push({t: `Page ${i+1} of ${n}`, x: W/2, y: H - 34, size: 9, align: 'center', color: '#888888'}));
+  return pages;
+}
+
+function drawPdf(doc, pages, firstPageAlreadyThere){
+  pages.forEach((items, i) => {
+    if (!(firstPageAlreadyThere && i === 0)) doc.addPage('a4', 'portrait');
+    for (const it of items) {
+      doc.setFont('helvetica', it.bold ? 'bold' : 'normal');
+      doc.setFontSize(it.size);
+      doc.setTextColor(it.color || '#000000');
+      doc.text(it.t, it.x, it.y, {align: it.align || 'left'});
+    }
+  });
+}
+function exportPdf(pieces, filename){
+  const doc = new window.jspdf.jsPDF({unit:'pt', format:'a4', orientation:'portrait'});
+  pieces.forEach((p, i) => drawPdf(doc, layoutPiece(p), i === 0));
+  doc.setProperties({title: filename.replace(/\.pdf$/,'')});
+  doc.save(filename);
+}
+const safeFile = s => clean(s).replace(/[\\/:*?"<>|]+/g,'').replace(/\s+/g,' ').trim().slice(0,80) || 'writing';
+
+function openPreview(piece, {subtitle = '', onPdf = null} = {}){
+  const pages = layoutPiece(piece);
+  const ov = document.createElement('div'); ov.className = 'overlay';
+  ov.innerHTML = `<div class="bar"><span class="ttl">${esc(subtitle || 'Preview — this is how your A4 page will look')}</span>
+    ${onPdf ? '<button class="btn primary" data-pdf>⬇ PDF</button>' : ''}<button class="btn" data-close>Close</button></div><div class="pages"></div>`;
+  const wrapEl = $('.pages', ov);
+  const holders = pages.map((items, i) => {
+    const h = document.createElement('div'); h.className = 'page-holder';
+    const pg = document.createElement('div'); pg.className = 'page';
+    for (const it of items) {
+      const d = document.createElement('div'); d.className = 'ln'; d.textContent = it.t;
+      d.style.fontSize = it.size + 'px'; d.style.top = (it.y - it.size * 0.85) + 'px';
+      if (it.bold) d.style.fontWeight = '700';
+      if (it.color) d.style.color = it.color;
+      if (it.align === 'center') { d.style.left = (it.x - 500) + 'px'; d.style.width = '1000px'; d.style.textAlign = 'center'; }
+      else if (it.align === 'right') { d.style.left = (it.x - 1000) + 'px'; d.style.width = '1000px'; d.style.textAlign = 'right'; }
+      else d.style.left = it.x + 'px';
+      pg.appendChild(d);
+    }
+    if (pages.length === 1 && items.length <= 3 && !piece.text.trim()) {
+      const d = document.createElement('div'); d.className='ln'; d.style.cssText='left:0;width:595px;text-align:center;top:400px;font-size:14px;color:#aaa'; d.textContent='Nothing written yet'; pg.appendChild(d);
+    }
+    h.appendChild(pg); wrapEl.appendChild(h);
+    return {h, pg};
+  });
+  const fit = () => {
+    const s = Math.min(1.35, (wrapEl.clientWidth - 24) / PAGE.W);
+    holders.forEach(({h, pg}) => { h.style.width = PAGE.W*s + 'px'; h.style.height = PAGE.H*s + 'px'; pg.style.transform = `scale(${s})`; });
+  };
+  const close = () => { ov.remove(); window.removeEventListener('resize', fit); document.removeEventListener('keydown', onKey); };
+  const onKey = e => { if (e.key === 'Escape') close(); };
+  $('[data-close]', ov).onclick = close;
+  if (onPdf) $('[data-pdf]', ov).onclick = onPdf;
+  document.body.appendChild(ov); fit();
+  window.addEventListener('resize', fit); document.addEventListener('keydown', onKey);
+}
+
+/* ------------------------------------------------------------------ *
+ *  Backends: Firebase (real) and Demo (this browser only)
+ * ------------------------------------------------------------------ */
+const draftId = (aid, uid) => `${aid}__${uid}`;
+
+function demoBackend(){
+  const KEY = 'finaldraft-demo-v1', SKEY = 'finaldraft-demo-session';
+  let mem = null, session = null; const listeners = new Set(); let authCb = null;
+  const seed = () => {
+    const names = ['Ana Clara','Bruno','Hana','Lucas','Mia','Rafael','Sofia','Theo'];
+    const roster = names.map((n,i) => ({id: 's'+i, name: n, uid: 'u'+i, email: `s${i}@demo`}));
+    const secrets = Object.fromEntries(roster.map(r => [r.id, 'demo123']));
+    const t = Date.now();
+    return { roster, secrets, assignments: { t1: {title: 'Persuasive letter', createdAt: t} }, config: {active: 't1'},
+      drafts: {
+        [draftId('t1','u2')]: {aid:'t1', uid:'u2', sid:'s2', name:'Hana', title:'Please Give Us a Longer Lunch Break',
+          text:'Dear Ms. Silva,\n\tI am writing to ask you to make our lunch break longer. Right now we only have twenty minutes to eat, and many students do not finish their food before the bell rings.\n\tFirst, a longer break would help us stay healthy. When we eat too fast, we feel tired in the afternoon and it is harder to focus in class.\n\tSecond, lunch is a time to talk with our friends. This helps our class become a kinder community.\n\tThank you for reading my letter. I hope you will think about it.\n\nSincerely,\nHana',
+          finished: true, words: 98, clientTime: t - 3600e3, finishedAt: t - 3600e3},
+        [draftId('t1','u3')]: {aid:'t1', uid:'u3', sid:'s3', name:'Lucas', title:'More Books for Our Library',
+          text:'Dear Mr. Ben,\n\tOur library needs more graphic novels because', finished:false, words: 8, clientTime: t - 600e3}
+      } };
+  };
+  const read = () => { if (mem) return mem; try { mem = JSON.parse(localStorage.getItem(KEY)); } catch {} if (!mem) { mem = seed(); write(); } return mem; };
+  const write = () => { try { localStorage.setItem(KEY, JSON.stringify(mem)); } catch {} listeners.forEach(f => f()); };
+  window.addEventListener('storage', e => { if (e.key === KEY) { mem = null; listeners.forEach(f => f()); } });
+  try { session = JSON.parse(sessionStorage.getItem(SKEY)); } catch {}
+  const setSession = s => { session = s; try { sessionStorage.setItem(SKEY, JSON.stringify(s)); } catch {} authCb && authCb(s); };
+  const watch = fn => { listeners.add(fn); fn(); return () => listeners.delete(fn); };
+  const clone = o => o == null ? o : JSON.parse(JSON.stringify(o));
+  return {
+    demo: true,
+    onAuth(cb){ authCb = cb; setTimeout(() => cb(session), 0); },
+    async listRoster(){ return clone(read().roster).sort((a,b) => a.name.localeCompare(b.name)); },
+    async studentSignIn(entry, pw){ if (read().secrets[entry.id] !== pw) throw {code:'auth/invalid-credential'}; setSession({role:'student', uid: entry.uid}); },
+    async teacherSignIn(){ setSession({role:'teacher', email: CONFIG.teacherEmail}); },
+    async signOut(){ setSession(null); },
+    async getActiveTask(){ const d = read(); const a = d.config.active; return a && d.assignments[a] ? {id: a, ...d.assignments[a]} : null; },
+    watchDraft(aid, uid, cb){ return watch(() => cb(clone(read().drafts[draftId(aid, uid)] || null), {pending:false})); },
+    async saveDraft(aid, entry, data){ const d = read(); const id = draftId(aid, entry.uid);
+      d.drafts[id] = {...(d.drafts[id]||{}), ...data, aid, uid: entry.uid, sid: entry.id, name: entry.name}; write(); },
+    // teacher
+    watchTasks(cb){ return watch(() => { const d = read(); cb({tasks: Object.entries(d.assignments).map(([id,a]) => ({id, ...a})), active: d.config.active || null}); }); },
+    async createTask(title){ const d = read(); const id = 't' + Date.now().toString(36); d.assignments[id] = {title, createdAt: Date.now()}; write(); return id; },
+    async renameTask(id, title){ const d = read(); d.assignments[id].title = title; write(); },
+    async setActive(id){ const d = read(); d.config.active = id; write(); },
+    watchDrafts(aid, cb){ return watch(() => cb(clone(Object.values(read().drafts).filter(x => x.aid === aid)))); },
+    watchRoster(cb){ return watch(() => cb(clone(read().roster).sort((a,b) => a.name.localeCompare(b.name)))); },
+    async getSecrets(){ return clone(read().secrets); },
+    async addStudent(name, pw){ const d = read(); const id = slug(name) + '-' + Math.random().toString(36).slice(2,6);
+      d.roster.push({id, name, uid: 'u' + id, email: id + '@demo'}); d.secrets[id] = pw; write(); },
+    async resetPassword(entry, pw){ const d = read(); d.secrets[entry.id] = pw; write(); },
+    async removeStudent(entry){ const d = read(); d.roster = d.roster.filter(r => r.id !== entry.id); delete d.secrets[entry.id]; write(); },
+  };
+}
+
+async function firebaseBackend(cfg){
+  const V = '10.12.2', base = `https://www.gstatic.com/firebasejs/${V}/`;
+  const [A, U, F] = await Promise.all([import(base+'firebase-app.js'), import(base+'firebase-auth.js'), import(base+'firebase-firestore.js')]);
+  const app = A.initializeApp(cfg);
+  const auth = U.getAuth(app);
+  let db;
+  try { db = F.initializeFirestore(app, {localCache: F.persistentLocalCache({tabManager: F.persistentMultipleTabManager()})}); }
+  catch { db = F.getFirestore(app); }
+  const isTeacherEmail = e => (e || '').toLowerCase() === CONFIG.teacherEmail.toLowerCase();
+  const STUDENT_DOMAIN = 'students.finaldraft.app';
+  const listDocs = snap => snap.docs.map(d => ({id: d.id, ...d.data()}));
+  // A second, throw-away Firebase app lets the teacher create/change student logins without being signed out.
+  async function asAdmin(fn){
+    const sec = A.initializeApp(cfg, 'admin-' + Date.now() + Math.random());
+    const sAuth = U.getAuth(sec);
+    try { await U.setPersistence(sAuth, U.inMemoryPersistence); return await fn(sAuth); }
+    finally { try { await U.signOut(sAuth); } catch {} try { await A.deleteApp(sec); } catch {} }
+  }
+  return {
+    demo: false,
+    onAuth(cb){ U.onAuthStateChanged(auth, u => cb(!u ? null : isTeacherEmail(u.email) ? {role:'teacher', email: u.email} : {role:'student', uid: u.uid})); },
+    async listRoster(){ return listDocs(await F.getDocs(F.collection(db, 'roster'))).sort((a,b) => a.name.localeCompare(b.name)); },
+    async studentSignIn(entry, pw){ await U.setPersistence(auth, U.browserSessionPersistence); await U.signInWithEmailAndPassword(auth, entry.email, pw); },
+    async teacherSignIn(email, pw){
+      if (!isTeacherEmail(email)) throw {code: 'not-teacher'};
+      await U.setPersistence(auth, U.browserLocalPersistence); await U.signInWithEmailAndPassword(auth, email, pw);
+    },
+    async signOut(){ await U.signOut(auth); },
+    async getActiveTask(){
+      const c = await F.getDoc(F.doc(db, 'config', 'app')); const a = c.exists() ? c.data().active : null; if (!a) return null;
+      const t = await F.getDoc(F.doc(db, 'assignments', a)); return t.exists() ? {id: a, ...t.data()} : null;
+    },
+    watchDraft(aid, uid, cb, onErr){
+      return F.onSnapshot(F.doc(db, 'drafts', draftId(aid, uid)), s => cb(s.exists() ? s.data() : null, {pending: s.metadata.hasPendingWrites}), onErr);
+    },
+    async saveDraft(aid, entry, data){
+      await F.setDoc(F.doc(db, 'drafts', draftId(aid, entry.uid)),
+        {...data, aid, uid: entry.uid, sid: entry.id, name: entry.name, updatedAt: F.serverTimestamp()}, {merge: true});
+    },
+    watchTasks(cb){
+      let tasks = [], active = null; const emit = () => cb({tasks, active});
+      const u1 = F.onSnapshot(F.collection(db, 'assignments'), s => { tasks = listDocs(s); emit(); });
+      const u2 = F.onSnapshot(F.doc(db, 'config', 'app'), s => { active = s.exists() ? s.data().active : null; emit(); });
+      return () => { u1(); u2(); };
+    },
+    async createTask(title){ const id = 't' + Date.now().toString(36); await F.setDoc(F.doc(db, 'assignments', id), {title, createdAt: Date.now()}); return id; },
+    async renameTask(id, title){ await F.updateDoc(F.doc(db, 'assignments', id), {title}); },
+    async setActive(id){ await F.setDoc(F.doc(db, 'config', 'app'), {active: id}, {merge: true}); },
+    watchDrafts(aid, cb){ return F.onSnapshot(F.query(F.collection(db, 'drafts'), F.where('aid', '==', aid)), s => cb(s.docs.map(d => d.data()))); },
+    watchRoster(cb){ return F.onSnapshot(F.collection(db, 'roster'), s => cb(listDocs(s).sort((a,b) => a.name.localeCompare(b.name)))); },
+    async getSecrets(){ const s = await F.getDocs(F.collection(db, 'secrets')); return Object.fromEntries(s.docs.map(d => [d.id, d.data().password])); },
+    async addStudent(name, pw){
+      const id = slug(name) + '-' + Math.random().toString(36).slice(2,6);
+      const email = `${id}@${STUDENT_DOMAIN}`;
+      const uid = await asAdmin(async a => (await U.createUserWithEmailAndPassword(a, email, pw)).user.uid);
+      await F.setDoc(F.doc(db, 'secrets', id), {password: pw});
+      await F.setDoc(F.doc(db, 'roster', id), {name, email, uid});
+    },
+    async resetPassword(entry, pw){
+      const old = (await F.getDoc(F.doc(db, 'secrets', entry.id))).data()?.password;
+      if (!old) throw new Error('The old password is not on file, so it cannot be changed here.');
+      await asAdmin(async a => { const c = await U.signInWithEmailAndPassword(a, entry.email, old); await U.updatePassword(c.user, pw); });
+      await F.setDoc(F.doc(db, 'secrets', entry.id), {password: pw});
+    },
+    async removeStudent(entry){
+      const old = (await F.getDoc(F.doc(db, 'secrets', entry.id))).data()?.password;
+      if (old) { try { await asAdmin(async a => { const c = await U.signInWithEmailAndPassword(a, entry.email, old); await U.deleteUser(c.user); }); } catch {} }
+      await F.deleteDoc(F.doc(db, 'roster', entry.id));
+      await F.deleteDoc(F.doc(db, 'secrets', entry.id));
+    },
+  };
+}
+
+function authMessage(e){
+  const c = e?.code || '';
+  if (c.includes('invalid-credential') || c.includes('wrong-password') || c.includes('user-not-found') || c.includes('invalid-email')) return "That password isn't right. Try again, or ask your teacher.";
+  if (c.includes('too-many-requests')) return 'Too many tries. Wait a minute, then try again.';
+  if (c.includes('network')) return "Can't connect to the internet right now.";
+  if (c === 'not-teacher') return "That email isn't set up as the teacher account.";
+  return 'Something went wrong. Please try again.';
+}
+
+/* ------------------------------------------------------------------ *
+ *  App
+ * ------------------------------------------------------------------ */
+let backend, roster = [];
+let authGen = 0;
+
+async function boot(){
+  try {
+    backend = CONFIG.firebase ? await firebaseBackend(CONFIG.firebase) : demoBackend();
+  } catch (e) {
+    console.error(e); $('#s-loading').textContent = "Couldn't connect. Check the internet connection and reload."; return;
+  }
+  if (backend.demo) {
+    const b = $('#demo-banner'); b.classList.remove('hidden');
+    b.innerHTML = '<b>Demo mode</b> — work is saved in this browser only. Student password: <b>demo123</b>. Teacher: any email &amp; password.';
+  }
+  backend.onAuth(route);
+}
+
+async function route(session){
+  const gen = ++authGen;
+  teardownWriter(); teardownTeacher();
+  if (!session) return showNames();
+  if (session.role === 'teacher') return showTeacher();
+  try { roster = await backend.listRoster(); } catch { roster = []; }
+  if (gen !== authGen) return;
+  const me = roster.find(r => r.uid === session.uid);
+  if (!me) { await backend.signOut(); return; }
+  showWriter(me);
+}
+
+/* ---------- Student: names + password ---------- */
+let picked = null;
+async function showNames(){
+  show('s-loading');
+  try { roster = await backend.listRoster(); } catch (e) { console.error(e); roster = []; }
+  const g = $('#name-grid'); g.innerHTML = '';
+  if (!roster.length) g.innerHTML = '<div class="empty" style="grid-column:1/-1">No students yet. Your teacher needs to add the class list.</div>';
+  for (const r of roster) {
+    const b = document.createElement('button'); b.className = 'name-btn';
+    b.innerHTML = `<span class="avatar" style="background:${colorFor(r.name)}">${esc(initials(r.name))}</span><span>${esc(r.name)}</span>`;
+    b.onclick = () => showPass(r);
+    g.appendChild(b);
+  }
+  show('s-names');
+}
+function showPass(r){
+  picked = r;
+  const av = $('#pass-avatar'); av.textContent = initials(r.name); av.style.background = colorFor(r.name);
+  $('#pass-name').textContent = r.name; $('#pass-input').value = ''; $('#pass-err').textContent = '';
+  show('s-pass'); setTimeout(() => $('#pass-input').focus(), 50);
+}
+$('#pass-back').onclick = showNames;
+$('#pass-form').onsubmit = async e => {
+  e.preventDefault();
+  const pw = $('#pass-input').value; if (!pw) return;
+  const btn = $('#pass-go'); btn.disabled = true; $('#pass-err').textContent = '';
+  try { await backend.studentSignIn(picked, pw); }
+  catch (err) { $('#pass-err').textContent = authMessage(err); $('#pass-input').select(); }
+  finally { btn.disabled = false; }
+};
+$('#to-teacher').onclick = () => { $('#tlogin-err').textContent = ''; show('s-tlogin'); };
+$('#tlogin-back').onclick = showNames;
+$('#tlogin-form').onsubmit = async e => {
+  e.preventDefault(); $('#tlogin-err').textContent = '';
+  try { await backend.teacherSignIn($('#t-email').value.trim(), $('#t-pass').value); }
+  catch (err) { $('#tlogin-err').textContent = authMessage(err); }
+};
+
+/* ---------- Student: writing ---------- */
+const W = { me: null, task: null, unsub: null, timer: null, dirty: false, pending: 0, finished: false, lastClient: 0, loaded: false, retry: null };
+const ta = $('#w-text'), titleIn = $('#w-title');
+ta.spellcheck = titleIn.spellcheck = !!CONFIG.spellcheck;
+if (!CONFIG.spellcheck) { ta.setAttribute('autocorrect','off'); ta.setAttribute('autocapitalize','sentences'); }
+
+function setStatus(kind, text){
+  const el = $('#save-status'); el.className = 'save-status ' + kind; $('.txt', el).textContent = text;
+}
+function autoGrow(){ titleIn.style.height = 'auto'; titleIn.style.height = titleIn.scrollHeight + 'px'; ta.style.height = 'auto'; ta.style.height = Math.max(ta.scrollHeight, window.innerHeight * 0.55) + 'px'; }
+function updateCount(){ const n = wordCount(ta.value); $('#w-count').textContent = n + (n === 1 ? ' word' : ' words'); }
+function setLocked(on){
+  W.finished = on;
+  ta.readOnly = titleIn.readOnly = on;
+  $('#paper').classList.toggle('locked', on);
+  $('#finished-banner').classList.toggle('hidden', !on);
+  $('#btn-finish').classList.toggle('hidden', on);
+  $('#btn-tab').disabled = on;
+}
+
+async function showWriter(me){
+  W.me = me; W.loaded = false; W.dirty = false; W.pending = 0; W.lastClient = 0;
+  $('#w-name').textContent = me.name;
+  show('s-write'); setStatus('', 'Loading…');
+  let task = null;
+  try { task = await backend.getActiveTask(); } catch (e) { console.error(e); }
+  W.task = task;
+  $('#w-body').classList.toggle('hidden', !task);
+  $('.write-bar .actions').classList.toggle('hidden', !task);
+  $('#save-status').classList.toggle('hidden', !task);
+  $('#w-notask').classList.toggle('hidden', !!task);
+  if (!task) { $('#w-task').textContent = CONFIG.appName; return; }
+  $('#w-task').textContent = task.title;
+  ta.value = ''; titleIn.value = ''; ta.readOnly = titleIn.readOnly = true; autoGrow(); updateCount();
+  W.unsub = backend.watchDraft(task.id, me.uid, onDraft, err => { console.error(err); setStatus('error', "Can't load your work — reload the page"); });
+  W.timer = setInterval(() => { if (W.dirty && W.loaded) save(); }, (CONFIG.autosaveSeconds || 3) * 1000);
+}
+function onDraft(d, meta){
+  if (!W.loaded) {
+    W.loaded = true;
+    ta.value = d?.text || ''; titleIn.value = d?.title || ''; W.lastClient = d?.clientTime || 0;
+    setLocked(!!d?.finished); autoGrow(); updateCount();
+    setStatus('saved', d ? 'All work saved' : 'Ready');
+    if (!W.finished) ta.focus({preventScroll: true});
+    return;
+  }
+  // Changes that came from another device (e.g. the student switched computers)
+  if (!d || meta.pending || W.dirty || W.pending) return;
+  if ((d.clientTime || 0) > W.lastClient) {
+    W.lastClient = d.clientTime;
+    const pos = ta.selectionStart;
+    if (ta.value !== (d.text || '')) { ta.value = d.text || ''; try { ta.setSelectionRange(pos, pos); } catch {} }
+    if (titleIn.value !== (d.title || '')) titleIn.value = d.title || '';
+    setLocked(!!d.finished); autoGrow(); updateCount();
+  }
+}
+async function save(extra = {}){
+  if (!W.task || !W.loaded) return;
+  W.dirty = false; W.lastClient = Date.now();
+  const data = { title: titleIn.value, text: ta.value, finished: W.finished, words: wordCount(ta.value), clientTime: W.lastClient, ...extra };
+  W.pending++;
+  setStatus(navigator.onLine ? 'saving' : 'offline', navigator.onLine ? 'Saving…' : 'Offline — kept on this device, will upload when back online');
+  try {
+    await backend.saveDraft(W.task.id, W.me, data);
+    W.pending--;
+    if (!W.pending && !W.dirty) setStatus('saved', 'Saved ' + new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}));
+  } catch (e) {
+    console.error(e); W.pending--; W.dirty = true;
+    setStatus('error', "Couldn't save — retrying… keep this page open");
+  }
+}
+function markDirty(){ if (!W.loaded || W.finished) return; W.dirty = true; if (!W.pending) setStatus('saving', 'Saving soon…'); updateCount(); }
+// Remove characters the A4 page can't print (e.g. emoji), so the editor always matches the preview/PDF.
+function sanitize(el, singleLine){
+  let v = clean(el.value); if (singleLine) v = v.replace(/[\n\t]+/g, ' ');
+  if (v !== el.value) { const pos = Math.max(0, el.selectionStart - (el.value.length - v.length)); el.value = v; try { el.setSelectionRange(pos, pos); } catch {} }
+}
+ta.addEventListener('input', () => { sanitize(ta); autoGrow(); markDirty(); });
+titleIn.addEventListener('input', () => { sanitize(titleIn, true); autoGrow(); markDirty(); });
+titleIn.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); ta.focus(); } });
+window.addEventListener('resize', () => { if (!$('#s-write').classList.contains('hidden')) autoGrow(); });
+window.addEventListener('online', () => { if (W.pending) setStatus('saving', 'Back online — uploading…'); else if (W.dirty) save(); });
+window.addEventListener('offline', () => { if (W.task) setStatus('offline', 'Offline — kept on this device, will upload when back online'); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && W.dirty) save(); });
+window.addEventListener('pagehide', () => { if (W.dirty) save(); });
+window.addEventListener('beforeunload', e => { if (W.dirty || W.pending) { if (W.dirty) save(); e.preventDefault(); e.returnValue = ''; } });
+
+function insertTab(){
+  if (ta.readOnly) return;
+  const s = ta.selectionStart, e = ta.selectionEnd;
+  ta.focus();
+  // execCommand keeps the browser's undo history working; fall back to setRangeText.
+  if (!document.execCommand || !document.execCommand('insertText', false, '\t')) { ta.setRangeText('\t', s, e, 'end'); ta.dispatchEvent(new Event('input')); }
+}
+ta.addEventListener('keydown', e => { if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); insertTab(); } });
+$('#btn-tab').addEventListener('mousedown', e => e.preventDefault()); // keep the cursor where it is
+$('#btn-tab').onclick = insertTab;
+$('#btn-preview').onclick = () => {
+  if (W.dirty) save();
+  openPreview({name: W.me.name, title: titleIn.value, text: ta.value, date: fmtDate()});
+};
+$('#btn-finish').onclick = async () => {
+  if (!ta.value.trim()) { toast('Write something first!'); return; }
+  const ok = await dialog({title: 'Are you finished?', text: 'Your teacher will see that your writing is ready. You can still make changes later.', okText: "Yes, I'm finished", cancelText: 'Not yet'});
+  if (!ok) return;
+  setLocked(true); save({finished: true, finishedAt: Date.now()});
+};
+$('#btn-unfinish').onclick = () => { setLocked(false); save({finished: false}); ta.focus(); };
+const studentSignOut = async () => { if (W.dirty) await save(); backend.signOut(); };
+$('#btn-signout').onclick = studentSignOut;
+$('#btn-signout2').onclick = studentSignOut;
+
+function teardownWriter(){
+  if (W.unsub) { W.unsub(); W.unsub = null; }
+  if (W.timer) { clearInterval(W.timer); W.timer = null; }
+  W.task = null; W.me = null; W.loaded = false; W.dirty = false;
+}
+
+/* ---------- Teacher ---------- */
+const T = { unsubs: [], draftUnsub: null, tasks: [], active: null, sel: null, drafts: [], roster: [], secrets: {}, showPw: false, tick: null };
+
+function teardownTeacher(){
+  T.unsubs.forEach(u => u()); T.unsubs = [];
+  if (T.draftUnsub) { T.draftUnsub(); T.draftUnsub = null; }
+  if (T.tick) { clearInterval(T.tick); T.tick = null; }
+}
+async function showTeacher(){
+  show('s-teacher'); setTab('work');
+  T.unsubs.push(backend.watchTasks(({tasks, active}) => {
+    T.tasks = tasks.sort((a,b) => (b.createdAt||0) - (a.createdAt||0)); T.active = active;
+    if (!T.sel || !tasks.some(t => t.id === T.sel)) selectTask(active && tasks.some(t => t.id === active) ? active : tasks[0]?.id || null);
+    else renderTaskBar();
+  }));
+  T.unsubs.push(backend.watchRoster(r => { T.roster = r; renderWork(); renderRoster(); }));
+  T.tick = setInterval(renderWork, 30000);
+  loadSecrets();
+}
+async function loadSecrets(){ try { T.secrets = await backend.getSecrets(); } catch (e) { console.error(e); T.secrets = {}; } renderRoster(); }
+function setTab(name){
+  $$('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+  $('#tab-work').classList.toggle('hidden', name !== 'work');
+  $('#tab-students').classList.toggle('hidden', name !== 'students');
+}
+$$('.tabs button').forEach(b => b.onclick = () => setTab(b.dataset.tab));
+
+function selectTask(id){
+  T.sel = id; T.drafts = [];
+  if (T.draftUnsub) { T.draftUnsub(); T.draftUnsub = null; }
+  if (id) T.draftUnsub = backend.watchDrafts(id, d => { T.drafts = d; renderWork(); });
+  renderTaskBar(); renderWork();
+}
+function renderTaskBar(){
+  const sel = $('#t-task');
+  sel.innerHTML = T.tasks.map(t => `<option value="${esc(t.id)}">${esc(t.title)}${t.id === T.active ? '  (open)' : ''}</option>`).join('');
+  sel.value = T.sel || '';
+  const none = !T.tasks.length;
+  $('#t-no-tasks').classList.toggle('hidden', !none);
+  $('#t-work-body').classList.toggle('hidden', none);
+  sel.classList.toggle('hidden', none); $('#t-rename').classList.toggle('hidden', none);
+  const isActive = T.sel && T.sel === T.active;
+  $('#t-active-badge').classList.toggle('hidden', !isActive);
+  $('#t-make-active').classList.toggle('hidden', none || isActive);
+}
+$('#t-task').onchange = e => selectTask(e.target.value);
+$('#t-new-task').onclick = async () => {
+  const title = await dialog({title: 'New writing task', text: 'Students will see this title at the top of their page.', input: '', okText: 'Create'});
+  if (!title) return;
+  const id = await backend.createTask(title);
+  const open = !T.active || await dialog({title: 'Open it for students now?', text: 'Students can only write in one task at a time. Opening this one closes the current one (nothing is deleted).', okText: 'Open it', cancelText: 'Later'});
+  if (open) await backend.setActive(id);
+  selectTask(id);
+};
+$('#t-rename').onclick = async () => {
+  const t = T.tasks.find(x => x.id === T.sel); if (!t) return;
+  const title = await dialog({title: 'Rename task', input: t.title, okText: 'Save'}); if (title) backend.renameTask(t.id, title);
+};
+$('#t-make-active').onclick = async () => {
+  const ok = await dialog({title: 'Open this task for students?', text: 'Students will write in this task the next time they sign in. Work in other tasks is kept.', okText: 'Open it'});
+  if (ok) backend.setActive(T.sel);
+};
+
+function pieceFor(r, d){ return {name: r.name, title: d?.title || '', text: d?.text || '', date: fmtDate(d?.finishedAt || d?.clientTime)}; }
+function taskTitle(){ return T.tasks.find(t => t.id === T.sel)?.title || 'Writing'; }
+function rowsData(){ return T.roster.map(r => ({r, d: T.drafts.find(x => x.uid === r.uid) || null})); }
+
+function renderWork(){
+  const tb = $('#t-table tbody'); if (!tb) return;
+  const rows = rowsData();
+  const fin = rows.filter(x => x.d?.finished).length, started = rows.filter(x => x.d && (x.d.text||'').trim()).length;
+  $('#t-summary').textContent = rows.length ? `${fin} of ${rows.length} finished · ${started - fin < 0 ? 0 : started - fin} still writing · ${rows.length - started} not started` : 'No students yet — add them in “Students & passwords”.';
+  $('#t-progress').style.width = rows.length ? (fin / rows.length * 100) + '%' : '0';
+  tb.innerHTML = rows.map(({r, d}, i) => {
+    const has = d && (d.text || '').trim();
+    const st = d?.finished ? '<span class="pill fin">✓ Finished</span>' : has ? '<span class="pill wip">Writing</span>' : '<span class="pill none">Not started</span>';
+    return `<tr><td><b>${esc(r.name)}</b>${d?.title ? `<div class="muted" style="font-size:13px">${esc(d.title)}</div>` : ''}</td>
+      <td>${st}</td><td>${has ? (d.words ?? wordCount(d.text)) : '—'}</td><td class="muted">${has ? ago(d.clientTime) : '—'}</td>
+      <td class="actions-cell"><button class="btn small" data-prev="${i}">👁 Preview</button> <button class="btn small" data-pdf="${i}" ${has ? '' : 'disabled'}>⬇ PDF</button></td></tr>`;
+  }).join('');
+  $$('[data-prev]', tb).forEach(b => b.onclick = () => {
+    const {r, d} = rows[+b.dataset.prev];
+    const status = d?.finished ? 'finished' : (d?.text||'').trim() ? 'still writing — work so far' : 'not started';
+    openPreview(pieceFor(r, d), {subtitle: `${r.name} · ${taskTitle()} · ${status}`, onPdf: () => exportPdf([pieceFor(r, d)], `${safeFile(taskTitle())} - ${safeFile(r.name)}.pdf`)});
+  });
+  $$('[data-pdf]', tb).forEach(b => b.onclick = () => { const {r, d} = rows[+b.dataset.pdf]; exportPdf([pieceFor(r, d)], `${safeFile(taskTitle())} - ${safeFile(r.name)}.pdf`); });
+}
+function exportMany(onlyFinished){
+  const list = rowsData().filter(({d}) => d && (d.text||'').trim() && (!onlyFinished || d.finished));
+  if (!list.length) { toast(onlyFinished ? 'Nobody has finished yet.' : 'Nobody has written anything yet.'); return; }
+  exportPdf(list.map(({r, d}) => pieceFor(r, d)), `${safeFile(taskTitle())}${onlyFinished ? ' - finished' : ' - all'}.pdf`);
+  toast(`PDF with ${list.length} student${list.length === 1 ? '' : 's'} — each starts on a new page.`);
+}
+$('#t-export-finished').onclick = () => exportMany(true);
+$('#t-export-all').onclick = () => exportMany(false);
+$('#t-signout').onclick = () => backend.signOut();
+
+/* Students & passwords */
+function renderRoster(){
+  const tb = $('#t-roster tbody'); if (!tb) return;
+  $('#t-show-pw').textContent = T.showPw ? 'Hide passwords' : 'Show passwords';
+  if (!T.roster.length) { tb.innerHTML = '<tr><td class="muted">No students yet.</td></tr>'; return; }
+  tb.innerHTML = T.roster.map((r, i) => `<tr><td><b>${esc(r.name)}</b></td>
+    <td class="mono">${T.showPw ? esc(T.secrets[r.id] || '(not on file)') : '••••••'}</td>
+    <td class="actions-cell"><button class="btn small" data-reset="${i}">New password</button> <button class="btn small danger" data-del="${i}">Remove</button></td></tr>`).join('');
+  $$('[data-reset]', tb).forEach(b => b.onclick = async () => {
+    const r = T.roster[+b.dataset.reset];
+    const pw = await dialog({title: `New password for ${r.name}`, text: 'At least 6 characters.', input: makePassword(), okText: 'Save'});
+    if (!pw) return; if (pw.length < 6) { toast('Passwords need at least 6 characters.'); return; }
+    b.disabled = true;
+    try { await backend.resetPassword(r, pw); T.secrets[r.id] = pw; T.showPw = true; renderRoster(); toast(`${r.name}'s password is now ${pw}`); }
+    catch (e) { console.error(e); toast(e.message || "Couldn't change the password."); }
+    finally { b.disabled = false; }
+  });
+  $$('[data-del]', tb).forEach(b => b.onclick = async () => {
+    const r = T.roster[+b.dataset.del];
+    const ok = await dialog({title: `Remove ${r.name}?`, text: 'They will disappear from the name list and can no longer sign in. Their saved writing is kept.', okText: 'Remove', danger: true});
+    if (!ok) return;
+    try { await backend.removeStudent(r); toast(`${r.name} removed`); } catch (e) { console.error(e); toast("Couldn't remove — try again."); }
+  });
+}
+$('#t-show-pw').onclick = () => { T.showPw = !T.showPw; renderRoster(); };
+$('#t-add-btn').onclick = async () => {
+  const lines = $('#t-add').value.split('\n').map(l => l.trim()).filter(Boolean);
+  const msg = $('#t-add-msg'); msg.className = 'msg'; if (!lines.length) return;
+  const btn = $('#t-add-btn'); btn.disabled = true;
+  const ok = [], bad = [], keep = [];
+  for (const line of lines) {
+    const i = line.lastIndexOf(',');
+    let name = (i > -1 ? line.slice(0, i) : line).trim(), pw = (i > -1 ? line.slice(i + 1) : '').trim();
+    if (!name) continue;
+    if (!pw) pw = makePassword();
+    if (pw.length < 6) { bad.push(`${name}: password must be at least 6 characters`); keep.push(line); continue; }
+    if (T.roster.some(r => r.name.toLowerCase() === name.toLowerCase())) { bad.push(`${name}: already on the list`); continue; }
+    msg.textContent = `Adding ${name}…`;
+    try { await backend.addStudent(name, pw); ok.push(`${name} — ${pw}`); }
+    catch (e) { console.error(e); bad.push(`${name}: ${e.code || e.message || 'error'}`); keep.push(line); }
+  }
+  btn.disabled = false;
+  $('#t-add').value = keep.join('\n');
+  msg.className = 'msg ' + (bad.length ? 'bad' : 'ok');
+  msg.textContent = (ok.length ? `Added ${ok.length}:\n${ok.join('\n')}` : '') + (bad.length ? `${ok.length ? '\n\n' : ''}Not added:\n${bad.join('\n')}` : '');
+  loadSecrets();
+};
+$('#t-print').onclick = () => {
+  const url = location.href.split('#')[0];
+  $('#print-area').innerHTML = T.roster.map(r => `<div class="login-card"><div class="n">${esc(r.name)}</div><div class="p">${esc(T.secrets[r.id] || '')}</div><div class="u">${esc(url)}</div></div>`).join('');
+  document.body.classList.add('print-cards');
+  try { window.print(); } catch {}
+  setTimeout(() => document.body.classList.remove('print-cards'), 500);
+};
+
+boot();
+</script>
+</body>
+</html>

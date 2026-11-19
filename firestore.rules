@@ -1,0 +1,43 @@
+rules_version = '2';
+// Final Draft — Firestore security rules.
+// Teacher login: benjamin.mcbride.84@gmail.com (same as CONFIG.teacherEmail in index.html).
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isTeacher() {
+      return request.auth != null && request.auth.token.email == 'benjamin.mcbride.84@gmail.com';
+    }
+    function signedIn() { return request.auth != null; }
+    // Draft ids look like  <taskId>__<studentUid>
+    function ownsDraft(did) { return signedIn() && did.split('__')[1] == request.auth.uid; }
+
+    // Names for the "Who are you?" screen (no passwords in here).
+    match /roster/{sid} {
+      allow read: if true;
+      allow write: if isTeacher();
+    }
+
+    // Student passwords — only the teacher can see them.
+    match /secrets/{sid} {
+      allow read, write: if isTeacher();
+    }
+
+    // Writing tasks and which one is open.
+    match /assignments/{aid} {
+      allow read: if signedIn();
+      allow write: if isTeacher();
+    }
+    match /config/{doc} {
+      allow read: if signedIn();
+      allow write: if isTeacher();
+    }
+
+    // Each student can only read/write their own drafts. The teacher can read all.
+    match /drafts/{did} {
+      allow read: if isTeacher() || ownsDraft(did);
+      allow create, update: if isTeacher()
+        || (ownsDraft(did) && request.resource.data.uid == request.auth.uid);
+      allow delete: if isTeacher();
+    }
+  }
+}
