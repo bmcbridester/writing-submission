@@ -10,7 +10,7 @@
 4. **Rules.** Open Firestore → Rules, paste in the contents of `firestore.rules`, change `teacher@example.com` to your teacher email, and click **Publish**.
 5. **Config.** At the top of `index.html`, set:
    - `firebase:` → paste your config object in place of `null`
-   - `teacherEmail:` → the same teacher email
+   - `teacherEmails:` → the teacher email(s), the same list as in `firestore.rules`
 6. **Host it.** Put `index.html` on Cloudflare Pages, either as its own project or as a folder of your class site, e.g. `/writing/`. Then, in Firebase → Authentication → Settings → Authorized domains, add your Pages domain.
 7. **Add your class.** Open the site, click **Teacher sign in**, then go to **Students & passwords** and paste your class list (`Name, password` per line, or just names to get made-up passwords). Use **Print login cards** to make cut-out cards for students.
 8. **Create a writing task.** On the **Student work** tab, click **＋ New writing task** and open it for students.

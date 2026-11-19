@@ -9,7 +9,7 @@
 
   ▸ With CONFIG.firebase left as null, the page runs in DEMO MODE: everything is
     stored only in this browser, so you can click through it right away.
-  ▸ To use it for real, paste your Firebase web config below, set teacherEmail,
+  ▸ To use it for real, paste your Firebase web config below, set teacherEmails,
     publish firestore.rules, and host this file (e.g. Cloudflare Pages).
     See SETUP.md for the step-by-step.
 -->
@@ -26,7 +26,12 @@ window.CONFIG = {
     appId: "1:856590452177:web:8f8fd3398effd608d24cf0"
   },
 
-  teacherEmail: "benjamin.mcbride.84@gmail.com", // must match the email in firestore.rules
+  // Everyone who can use the teacher dashboard. Each needs a Firebase user (Authentication → Users)
+  // AND must also be listed in firestore.rules.
+  teacherEmails: [
+    "benjamin.mcbride.84@gmail.com",
+    "danielle@issaopaulo.com.br"
+  ],
   appName: "Final Draft",
   bodySize: 12,          // font size (pt) of the writing on the A4 page
   spellcheck: true,      // set to false to turn off red underlines / autocorrect
@@ -321,6 +326,7 @@ window.CONFIG = {
 
 <script type="module">
 const CONFIG = window.CONFIG;
+const TEACHERS = [...(CONFIG.teacherEmails || []), ...(CONFIG.teacherEmail ? [CONFIG.teacherEmail] : [])].map(e => e.trim().toLowerCase());
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -520,7 +526,7 @@ function demoBackend(){
     onAuth(cb){ authCb = cb; setTimeout(() => cb(session), 0); },
     async listRoster(){ return clone(read().roster).sort((a,b) => a.name.localeCompare(b.name)); },
     async studentSignIn(entry, pw){ if (read().secrets[entry.id] !== pw) throw {code:'auth/invalid-credential'}; setSession({role:'student', uid: entry.uid}); },
-    async teacherSignIn(){ setSession({role:'teacher', email: CONFIG.teacherEmail}); },
+    async teacherSignIn(){ setSession({role:'teacher', email: TEACHERS[0]}); },
     async signOut(){ setSession(null); },
     async getActiveTask(){ const d = read(); const a = d.config.active; return a && d.assignments[a] ? {id: a, ...d.assignments[a]} : null; },
     watchDraft(aid, uid, cb){ return watch(() => cb(clone(read().drafts[draftId(aid, uid)] || null), {pending:false})); },
@@ -549,7 +555,7 @@ async function firebaseBackend(cfg){
   let db;
   try { db = F.initializeFirestore(app, {localCache: F.persistentLocalCache({tabManager: F.persistentMultipleTabManager()})}); }
   catch { db = F.getFirestore(app); }
-  const isTeacherEmail = e => (e || '').toLowerCase() === CONFIG.teacherEmail.toLowerCase();
+  const isTeacherEmail = e => TEACHERS.includes((e || '').trim().toLowerCase());
   const STUDENT_DOMAIN = 'students.finaldraft.app';
   const listDocs = snap => snap.docs.map(d => ({id: d.id, ...d.data()}));
   // A second, throw-away Firebase app lets the teacher create/change student logins without being signed out.
